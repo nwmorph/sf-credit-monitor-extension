@@ -11,6 +11,9 @@ const CARD_LABELS = {
 
 // ── Credit cards — Overview ────────────────────────────────────────────────
 
+// cardsData is now a flat array of rows from fetchOverview:
+// { CardDevName, TotalQuantity, TotalConsumed, StartDate, EndDate, ContractId, UsageModel }
+
 function renderCreditCards(cardsData) {
   const grid = document.getElementById('credit-cards-grid');
   grid.replaceChildren();
@@ -18,14 +21,12 @@ function renderCreditCards(cardsData) {
   const metaEl = document.getElementById('overview-meta');
   metaEl.textContent = `${cardsData.length} card${cardsData.length !== 1 ? 's' : ''}`;
 
-  // Health summary chips above the grid
   const healthBar = document.createElement('div');
   healthBar.className = 'health-bar';
-  cardsData.forEach(({ cardKey, usage }) => {
-    if (!usage) return;
-    const pct = usage.totalQuantity > 0 ? (usage.unitsConsumed / usage.totalQuantity) * 100 : 0;
+  cardsData.forEach(row => {
+    const pct = row.TotalQuantity > 0 ? (row.TotalConsumed / row.TotalQuantity) * 100 : 0;
     const cls = pct >= 80 ? 'red' : pct >= 50 ? 'amber' : 'green';
-    const meta = CARD_LABELS[cardKey.developerName] || { name: cardKey.developerName, unit: '' };
+    const meta = CARD_LABELS[row.CardDevName] || { name: row.CardDevName, unit: '' };
     const chip = document.createElement('div');
     chip.className = `health-chip ${cls}`;
     const dot = document.createElement('span');
@@ -38,17 +39,15 @@ function renderCreditCards(cardsData) {
   });
   grid.appendChild(healthBar);
 
-  cardsData.forEach(({ cardKey, usage }) => {
-    grid.appendChild(buildCreditCard(cardKey, usage));
-  });
+  cardsData.forEach(row => grid.appendChild(buildCreditCard(row)));
 }
 
-function buildCreditCard(cardKey, usage) {
-  const meta = CARD_LABELS[cardKey.developerName] || { name: cardKey.developerName, unit: '' };
-  const consumed = usage ? usage.unitsConsumed || 0 : 0;
-  const total = usage ? usage.totalQuantity || 0 : 0;
+function buildCreditCard(row) {
+  const meta = CARD_LABELS[row.CardDevName] || { name: row.CardDevName, unit: 'Credits' };
+  const consumed  = row.TotalConsumed  || 0;
+  const total     = row.TotalQuantity  || 0;
   const remaining = total - consumed;
-  const pct = total > 0 ? (consumed / total) * 100 : 0;
+  const pct       = total > 0 ? (consumed / total) * 100 : 0;
   const pctRounded = Math.round(pct);
 
   const card = document.createElement('div');
@@ -57,13 +56,13 @@ function buildCreditCard(cardKey, usage) {
   // Header: name + badge
   const header = document.createElement('div');
   header.className = 'credit-card-header';
-  const name = document.createElement('span');
-  name.className = 'credit-card-name';
-  name.textContent = meta.name;
+  const nameEl = document.createElement('span');
+  nameEl.className = 'credit-card-name';
+  nameEl.textContent = meta.name;
   const badge = document.createElement('span');
   badge.className = 'credit-badge';
-  badge.textContent = cardKey.usageModel === 'PrePurchase' ? 'Pre-purchased' : cardKey.usageModel || '';
-  header.appendChild(name);
+  badge.textContent = row.UsageModel === 'PrePurchase' ? 'Pre-purchased' : (row.UsageModel || '');
+  header.appendChild(nameEl);
   header.appendChild(badge);
   card.appendChild(header);
 
@@ -92,13 +91,12 @@ function buildCreditCard(cardKey, usage) {
   // Meta row: total, start date, end date, contract
   const metaRow = document.createElement('div');
   metaRow.className = 'credit-card-meta';
-  const metaItems = [
+  [
     { label: `Total ${meta.unit}`, value: fmt(total) },
-    { label: 'Start Date',         value: usage && usage.startDate ? fmtDate(usage.startDate) : '—' },
-    { label: 'End Date',           value: usage && usage.endDate   ? fmtDate(usage.endDate)   : '—' },
-    { label: 'Contract',           value: usage && usage.contractNumber ? usage.contractNumber : '—', isLink: true },
-  ];
-  metaItems.forEach(({ label, value, isLink }) => {
+    { label: 'Start Date',         value: fmtDate(row.StartDate) },
+    { label: 'End Date',           value: fmtDate(row.EndDate) },
+    { label: 'Contract',           value: row.ContractId || '—', isLink: !!row.ContractId },
+  ].forEach(({ label, value, isLink }) => {
     const item = document.createElement('div');
     item.className = 'credit-meta-item';
     const lbl = document.createElement('div');
@@ -113,7 +111,6 @@ function buildCreditCard(cardKey, usage) {
   });
   card.appendChild(metaRow);
 
-  // "View Consumption Details" link → navigates to Breakdown tab filtered to this card
   const viewLink = document.createElement('div');
   viewLink.className = 'credit-card-link';
   viewLink.textContent = 'View Consumption Details →';

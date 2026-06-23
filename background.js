@@ -36,15 +36,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
-  if (message.type === 'fetchCards') {
-    fetchCards(message.orgUrl)
-      .then(data => sendResponse({ ok: true, data }))
-      .catch(err => sendResponse({ ok: false, error: err.message }));
-    return true;
-  }
-
-  if (message.type === 'fetchCardUsage') {
-    fetchCardUsage(message.orgUrl, message.cardKey)
+  if (message.type === 'fetchOverview') {
+    fetchOverview(message.orgUrl)
       .then(data => sendResponse({ ok: true, data }))
       .catch(err => sendResponse({ ok: false, error: err.message }));
     return true;
@@ -354,9 +347,50 @@ async function fetchBreakdown(orgUrl, startDate, endDate, groupBy) {
   return dcQuery(orgUrl, sql);
 }
 
+// ── Overview: entitlements + consumed totals — pure DLO, no Aura ──────────
+// Fetches everything needed for the overview cards in two parallel queries.
+
+async function fetchOverview(orgUrl) {
+  const [entResp, consumedResp] = await Promise.all([
+    // TenantEntitlementTransaction: what was purchased
+    dcQuery(orgUrl, `
+      SELECT
+        entitlementcarddefdevlname__c AS CardDevName,
+        SUM(quantity__c)              AS TotalQuantity,
+        MIN(startdate__c)             AS StartDate,
+        MAX(enddate__c)               AS EndDate,
+        mgmtorgcontract__c            AS ContractId,
+        usagemodel__c                 AS UsageModel
+      FROM TenantEntitlementTransaction
+      WHERE entitlementtransactiontype__c = 'New'
+      GROUP BY entitlementcarddefdevlname__c, mgmtorgcontract__c, usagemodel__c
+      ORDER BY TotalQuantity DESC
+    `),
+    // TenantDailyEntitlementConsumption: what was consumed (all time — no date filter)
+    dcQuery(orgUrl, `
+      SELECT
+        carddefinitiondevelopername__c AS CardDevName,
+        SUM(unitsconsumed__c)          AS TotalConsumed
+      FROM TenantDailyEntitlementConsumption
+      GROUP BY carddefinitiondevelopername__c
+    `)
+  ]);
+
+  // Merge consumed totals into entitlement rows
+  const consumedMap = {};
+  (consumedResp.data || []).forEach(r => {
+    consumedMap[r.CardDevName] = parseFloat(r.TotalConsumed) || 0;
+  });
+
+  return (entResp.data || []).map(r => ({
+    ...r,
+    TotalConsumed: consumedMap[r.CardDevName] || 0,
+    TotalQuantity: parseFloat(r.TotalQuantity) || 0,
+  }));
+}
+
 // ── Entitlement data (contract dates, total quantities, card names) ────────
-// TenantEntitlementTransaction: startdate__c, enddate__c, quantity__c,
-// entitlementcarddefdevlname__c, mgmtorgcontract__c, usagemodel__c
+// Kept for compatibility — fetchOverview is preferred.
 
 async function fetchEntitlements(orgUrl) {
   const sql = `

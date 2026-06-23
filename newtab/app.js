@@ -166,51 +166,20 @@ async function doRefresh() {
   showLoading('Loading Digital Wallet…');
 
   try {
-    // Fetch entitlement totals + contract info from TenantEntitlementTransaction
-    // and current usage from the Aura Digital Wallet API in parallel.
-    const knownCards = [
-      { developerName: 'FlexCredits',          businessEnvType: 'Production', usageModel: 'PrePurchase' },
-      { developerName: 'DataServicesCredits',   businessEnvType: 'Production', usageModel: 'PrePurchase' },
-      { developerName: 'DataStorageAllocation', businessEnvType: 'Production', usageModel: 'PrePurchase' },
-      { developerName: 'EinsteinRequests',      businessEnvType: 'Production', usageModel: 'PrePurchase' },
-    ];
+    const r = await sendMsg({ type: 'fetchOverview', orgUrl });
 
-    const [entitlementsResp, ...usageResults] = await Promise.allSettled([
-      sendMsg({ type: 'fetchEntitlements', orgUrl }),
-      ...knownCards.map(cardKey =>
-        sendMsg({ type: 'fetchCardUsage', orgUrl, cardKey })
-          .then(r => r.ok ? { cardKey, usage: r.data } : null)
-          .catch(() => null)
-      )
-    ]);
-
-    // Build entitlement map: CardDevName → { totalQuantity, startDate, endDate, contractId, usageModel }
-    const entitlementMap = {};
-    if (entitlementsResp.status === 'fulfilled' && entitlementsResp.value.ok) {
-      (entitlementsResp.value.data.data || []).forEach(row => {
-        entitlementMap[row.CardDevName] = row;
-      });
+    if (!r.ok) {
+      const msg = r.error === 'ACCESS_DENIED'
+        ? 'Access denied. Check that your user has permission to access Data Cloud APIs.'
+        : `Error: ${r.error}`;
+      showError(msg);
+      return;
     }
 
-    allCardsData = usageResults
-      .filter(r => r.status === 'fulfilled' && r.value)
-      .map(r => {
-        const { cardKey, usage } = r.value;
-        const ent = entitlementMap[cardKey.developerName] || {};
-        return {
-          cardKey,
-          usage: {
-            ...usage,
-            totalQuantity:  ent.TotalQuantity  || usage.totalQuantity,
-            startDate:      ent.StartDate      || usage.startDate,
-            endDate:        ent.EndDate        || usage.endDate,
-            contractNumber: ent.ContractId     || usage.contractNumber,
-          }
-        };
-      });
+    allCardsData = r.data;
 
-    if (allCardsData.length === 0) {
-      showError('No credit card data found. Make sure you are logged into a production org with Digital Wallet access.');
+    if (!allCardsData || allCardsData.length === 0) {
+      showError('No credit card data found. Make sure Digital Wallet DLOs are set up in this org.');
       return;
     }
 
@@ -220,10 +189,7 @@ async function doRefresh() {
     navigateTo(activeSection);
 
   } catch (err) {
-    const msg = err.message === 'ACCESS_DENIED'
-      ? 'Access denied. Check that your user has permission to view Digital Wallet data.'
-      : `Error: ${err.message}`;
-    showError(msg);
+    showError(`Error: ${err.message}`);
   }
 }
 
@@ -313,12 +279,7 @@ function setErrorPanel(el, msg) {
 
 function updateLastUpdated() {
   const el = document.getElementById('sidebar-last-updated');
-  const latest = allCardsData
-    .map(c => c.usage && c.usage.lastUpdatedDate)
-    .filter(Boolean)
-    .sort()
-    .pop();
-  if (latest) el.textContent = `Updated: ${new Date(latest).toLocaleString()}`;
+  el.textContent = `Refreshed: ${new Date().toLocaleTimeString()}`;
 }
 
 // ── Message helper ─────────────────────────────────────────────────────────
