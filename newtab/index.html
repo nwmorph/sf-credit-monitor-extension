@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SF Credit Monitor</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="ext-layout">
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-title">SF Credit Monitor</div>
+        <div class="sidebar-org" id="sidebar-org">Not connected</div>
+        <select id="org-switcher" class="org-switcher" style="display:none"></select>
+      </div>
+
+      <div class="sidebar-filters">
+        <div class="filter-row">
+          <label class="filter-label">From</label>
+          <input type="date" id="filter-start" class="filter-input" />
+        </div>
+        <div class="filter-row">
+          <label class="filter-label">To</label>
+          <input type="date" id="filter-end" class="filter-input" />
+        </div>
+        <div class="filter-row">
+          <label class="filter-label">Period</label>
+          <select id="filter-period" class="filter-input">
+            <option value="30">Last 30 days</option>
+            <option value="60">Last 60 days</option>
+            <option value="90" selected>Last 90 days</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+        <button class="btn-primary" id="btn-refresh">↺ Refresh</button>
+      </div>
+
+      <div class="sidebar-nav">
+        <div class="nav-item active" data-section="overview">Overview</div>
+        <div class="nav-item" data-section="timeline">Timeline</div>
+        <div class="nav-item" data-section="breakdown">Breakdown</div>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="sidebar-last-updated" id="sidebar-last-updated"></div>
+        <div class="sidebar-readonly-note">Read-only — no data is written to your org</div>
+      </div>
+    </aside>
+
+    <!-- Resizer -->
+    <div id="sidebar-resizer" class="sidebar-resizer"></div>
+
+    <!-- Main content -->
+    <main class="main-content" id="main-content">
+
+      <div id="main-empty" class="main-empty">
+        <div class="empty-icon">💳</div>
+        <h2>SF Credit Monitor</h2>
+        <p>Open a Salesforce org tab, then click Refresh to load your Digital Wallet data.</p>
+      </div>
+
+      <div id="main-loading" class="main-loading" style="display:none;">
+        <div class="spinner"></div>
+        <p id="loading-msg">Loading…</p>
+      </div>
+
+      <div id="main-error" class="main-error" style="display:none;"></div>
+
+      <div id="main-data" style="display:none;">
+
+        <!-- Overview section -->
+        <section id="section-overview" class="content-section">
+          <div class="section-header">
+            <h1 class="section-title">Consumption Cards</h1>
+            <div class="section-meta" id="overview-meta"></div>
+          </div>
+          <div id="credit-cards-grid" class="credit-cards-grid"></div>
+        </section>
+
+        <!-- Timeline section -->
+        <section id="section-timeline" class="content-section" style="display:none;">
+          <div class="section-header">
+            <h1 class="section-title">Consumption Timeline</h1>
+            <div class="section-meta" id="timeline-meta"></div>
+          </div>
+          <div class="analysis-tabs">
+            <button class="tab-btn active" data-tab="timeline-daily">Daily</button>
+            <button class="tab-btn" data-tab="timeline-hourly">Hourly</button>
+          </div>
+          <div class="tab-panel active" id="tab-timeline-daily"></div>
+          <div class="tab-panel" id="tab-timeline-hourly"></div>
+        </section>
+
+        <!-- Breakdown section -->
+        <section id="section-breakdown" class="content-section" style="display:none;">
+          <div class="section-header">
+            <h1 class="section-title">Consumption by Type</h1>
+            <div class="section-meta" id="breakdown-meta"></div>
+          </div>
+          <div class="analysis-tabs">
+            <button class="tab-btn active" data-tab="breakdown-feature">By Feature</button>
+            <button class="tab-btn" data-tab="breakdown-user">By User</button>
+            <button class="tab-btn" data-tab="breakdown-type">By Type</button>
+          </div>
+          <div class="tab-panel active" id="tab-breakdown-feature"></div>
+          <div class="tab-panel" id="tab-breakdown-user"></div>
+          <div class="tab-panel" id="tab-breakdown-type"></div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <script src="main.js"></script>
+  <script src="app.js"></script>
+  <script>
+    // Sidebar resize
+    (function() {
+      const resizer = document.getElementById('sidebar-resizer');
+      const sidebar = document.getElementById('sidebar');
+      let active = false, startX = 0, startW = 0;
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;cursor:col-resize;display:none;';
+      document.body.appendChild(overlay);
+      resizer.addEventListener('mousedown', e => {
+        active = true; startX = e.clientX; startW = sidebar.getBoundingClientRect().width;
+        overlay.style.display = 'block'; e.preventDefault();
+      });
+      overlay.addEventListener('mousemove', e => {
+        if (!active) return;
+        sidebar.style.width = Math.min(600, Math.max(200, startW + e.clientX - startX)) + 'px';
+      });
+      overlay.addEventListener('mouseup', () => { active = false; overlay.style.display = 'none'; });
+      overlay.addEventListener('mouseleave', () => { active = false; overlay.style.display = 'none'; });
+    })();
+  </script>
+</body>
+</html>

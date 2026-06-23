@@ -1,0 +1,64 @@
+{
+  "manifest_version": 3,
+  "name": "SF Credit Monitor",
+  "description": "Monitor Salesforce Agentforce and Data Cloud consumption credits — overview, timeline, and drill-down by feature, user, and time.",
+  "version": "1.0.0",
+  "author": "Niklas Waller",
+
+  "permissions": [
+    "tabs",
+    "cookies",
+    "storage",
+    "activeTab"
+  ],
+
+  "host_permissions": [
+    "https://*.salesforce.com/*",
+    "https://*.force.com/*",
+    "https://*.lightning.force.com/*",
+    "https://*.my.salesforce.com/*",
+    "https://*.sandbox.my.salesforce.com/*",
+    "https://*.develop.my.salesforce.com/*",
+    "https://*.scratch.my.salesforce.com/*",
+    "https://*.visual.force.com/*",
+    "https://*.360a.salesforce.com/*"
+  ],
+
+  "background": {
+    "service_worker": "background.js"
+  },
+
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.salesforce.com/*",
+        "https://*.force.com/*",
+        "https://*.lightning.force.com/*",
+        "https://*.my.salesforce.com/*",
+        "https://*.sandbox.my.salesforce.com/*",
+        "https://*.develop.my.salesforce.com/*",
+        "https://*.scratch.my.salesforce.com/*",
+        "https://*.visual.force.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "action": {
+    "default_title": "SF Credit Monitor",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}
