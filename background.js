@@ -121,7 +121,10 @@ async function getDataCloudToken(orgUrl) {
 
   const res = await fetch(`${apiUrl}/services/a360/token`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': `Bearer ${accessToken}`
+    },
     body: new URLSearchParams({
       grant_type: 'urn:salesforce:grant-type:external:cdp',
       subject_token: accessToken,
