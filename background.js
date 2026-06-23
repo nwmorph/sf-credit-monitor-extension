@@ -114,29 +114,40 @@ async function getDataCloudToken(orgUrl) {
   // /services/a360/token is served from the core org, not the Lightning domain.
   const apiUrl = toApiUrl(orgUrl);
 
-  console.debug('[SF Credit Monitor] token exchange', {
-    url: `${apiUrl}/services/a360/token`,
-    sidPrefix: sid ? sid.slice(0, 20) + '…' : 'EMPTY'
-  });
+  // Cookie values may be URL-encoded — decode before use
+  const accessToken = decodeURIComponent(sid);
+
+  console.debug('[SF Credit Monitor] token exchange →', apiUrl, '| sid prefix:', accessToken.slice(0, 20) + '…');
 
   const res = await fetch(`${apiUrl}/services/a360/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       grant_type: 'urn:salesforce:grant-type:external:cdp',
-      subject_token: sid,
+      subject_token: accessToken,
       subject_token_type: 'urn:ietf:params:oauth:token-type:access_token'
     })
   });
 
+  // Always read body as text first — avoids JSON parse crash on HTML error pages
+  const rawBody = await res.text();
+  console.debug('[SF Credit Monitor] token exchange response:', res.status, rawBody.slice(0, 300));
+
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    console.debug('[SF Credit Monitor] token exchange failed', res.status, text.slice(0, 200));
     if (res.status === 401 || res.status === 403) throw new Error('ACCESS_DENIED');
-    throw new Error(`Data Cloud token exchange failed (${res.status}): ${text}`);
+    throw new Error(`Data Cloud token exchange failed (${res.status}): ${rawBody.slice(0, 300)}`);
   }
 
-  const json = await res.json();
+  let json;
+  try {
+    json = JSON.parse(rawBody);
+  } catch (_) {
+    throw new Error(`Token exchange returned non-JSON (${res.status}): ${rawBody.slice(0, 200)}`);
+  }
+
+  if (!json.access_token || !json.instance_url) {
+    throw new Error(`Token exchange missing fields: ${JSON.stringify(json).slice(0, 200)}`);
+  }
   const tse = json.instance_url.replace(/\/$/, '');
   // Cache for the token's lifetime (default ~2 hours); fall back to 90 min
   const expiresIn = (json.expires_in || 7200) * 1000;
