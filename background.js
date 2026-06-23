@@ -88,11 +88,16 @@ function toApiUrl(orgUrl) {
 }
 
 async function getSessionToken(orgUrl) {
-  const url = toApiUrl(orgUrl);
-  const cookie = await chrome.cookies.get({ url, name: 'sid' });
-  if (cookie) return cookie.value;
-  const fallback = await chrome.cookies.get({ url, name: 'sidCommunity' });
-  if (fallback) return fallback.value;
+  // Try multiple URL forms — the sid cookie domain varies by org setup.
+  // Lightning orgs (*.lightning.force.com) set the cookie on that domain;
+  // the converted *.my.salesforce.com URL may not have it.
+  const urls = [...new Set([orgUrl, toApiUrl(orgUrl)])];
+  for (const url of urls) {
+    const cookie = await chrome.cookies.get({ url, name: 'sid' });
+    if (cookie) return cookie.value;
+    const community = await chrome.cookies.get({ url, name: 'sidCommunity' });
+    if (community) return community.value;
+  }
   throw new Error('Not logged in to this Salesforce org, or session has expired. Please log in and try again.');
 }
 
@@ -105,6 +110,8 @@ async function getDataCloudToken(orgUrl) {
   }
 
   const sid = await getSessionToken(orgUrl);
+  // Use the API URL (*.my.salesforce.com) for the token exchange endpoint —
+  // /services/a360/token is served from the core org, not the Lightning domain.
   const apiUrl = toApiUrl(orgUrl);
 
   const res = await fetch(`${apiUrl}/services/a360/token`, {
