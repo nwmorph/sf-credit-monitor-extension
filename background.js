@@ -114,6 +114,11 @@ async function getDataCloudToken(orgUrl) {
   // /services/a360/token is served from the core org, not the Lightning domain.
   const apiUrl = toApiUrl(orgUrl);
 
+  console.debug('[SF Credit Monitor] token exchange', {
+    url: `${apiUrl}/services/a360/token`,
+    sidPrefix: sid ? sid.slice(0, 20) + '…' : 'EMPTY'
+  });
+
   const res = await fetch(`${apiUrl}/services/a360/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -126,6 +131,7 @@ async function getDataCloudToken(orgUrl) {
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
+    console.debug('[SF Credit Monitor] token exchange failed', res.status, text.slice(0, 200));
     if (res.status === 401 || res.status === 403) throw new Error('ACCESS_DENIED');
     throw new Error(`Data Cloud token exchange failed (${res.status}): ${text}`);
   }
