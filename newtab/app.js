@@ -166,6 +166,8 @@ async function doRefresh() {
   showLoading('Loading Digital Wallet…');
 
   try {
+    // Fetch entitlement totals + contract info from TenantEntitlementTransaction
+    // and current usage from the Aura Digital Wallet API in parallel.
     const knownCards = [
       { developerName: 'FlexCredits',          businessEnvType: 'Production', usageModel: 'PrePurchase' },
       { developerName: 'DataServicesCredits',   businessEnvType: 'Production', usageModel: 'PrePurchase' },
@@ -173,17 +175,39 @@ async function doRefresh() {
       { developerName: 'EinsteinRequests',      businessEnvType: 'Production', usageModel: 'PrePurchase' },
     ];
 
-    const results = await Promise.allSettled(
-      knownCards.map(cardKey =>
+    const [entitlementsResp, ...usageResults] = await Promise.allSettled([
+      sendMsg({ type: 'fetchEntitlements', orgUrl }),
+      ...knownCards.map(cardKey =>
         sendMsg({ type: 'fetchCardUsage', orgUrl, cardKey })
           .then(r => r.ok ? { cardKey, usage: r.data } : null)
           .catch(() => null)
       )
-    );
+    ]);
 
-    allCardsData = results
+    // Build entitlement map: CardDevName → { totalQuantity, startDate, endDate, contractId, usageModel }
+    const entitlementMap = {};
+    if (entitlementsResp.status === 'fulfilled' && entitlementsResp.value.ok) {
+      (entitlementsResp.value.data.data || []).forEach(row => {
+        entitlementMap[row.CardDevName] = row;
+      });
+    }
+
+    allCardsData = usageResults
       .filter(r => r.status === 'fulfilled' && r.value)
-      .map(r => r.value);
+      .map(r => {
+        const { cardKey, usage } = r.value;
+        const ent = entitlementMap[cardKey.developerName] || {};
+        return {
+          cardKey,
+          usage: {
+            ...usage,
+            totalQuantity:  ent.TotalQuantity  || usage.totalQuantity,
+            startDate:      ent.StartDate      || usage.startDate,
+            endDate:        ent.EndDate        || usage.endDate,
+            contractNumber: ent.ContractId     || usage.contractNumber,
+          }
+        };
+      });
 
     if (allCardsData.length === 0) {
       showError('No credit card data found. Make sure you are logged into a production org with Digital Wallet access.');
@@ -216,10 +240,11 @@ async function loadTimeline() {
 
 async function loadHourly() {
   const el = document.getElementById('tab-timeline-hourly');
-  const note = document.createElement('p');
-  note.style.cssText = 'padding:20px;color:var(--muted);font-size:0.85rem;';
-  note.textContent = 'Hourly data requires confirming TenantHourlyEntitlementConsumption field names (Phase 0).';
-  el.replaceChildren(note);
+  setLoadingPanel(el);
+  const r = await sendMsg({ type: 'fetchHourlyConsumption', orgUrl, startDate: dateRange.start, endDate: dateRange.end });
+  if (!r.ok) { setErrorPanel(el, r.error); return; }
+  breakdownData.hourly = r.data;
+  renderHourlyTimeline(r.data);
 }
 
 // ── Breakdown ──────────────────────────────────────────────────────────────

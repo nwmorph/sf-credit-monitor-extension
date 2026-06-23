@@ -50,8 +50,22 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === 'fetchEntitlements') {
+    fetchEntitlements(message.orgUrl)
+      .then(data => sendResponse({ ok: true, data }))
+      .catch(err => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
   if (message.type === 'fetchDailyConsumption') {
     fetchDailyConsumption(message.orgUrl, message.startDate, message.endDate)
+      .then(data => sendResponse({ ok: true, data }))
+      .catch(err => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
+  if (message.type === 'fetchHourlyConsumption') {
+    fetchHourlyConsumption(message.orgUrl, message.startDate, message.endDate)
       .then(data => sendResponse({ ok: true, data }))
       .catch(err => sendResponse({ ok: false, error: err.message }));
     return true;
@@ -256,42 +270,107 @@ async function fetchCardUsage(orgUrl, cardKey) {
 }
 
 // ── Daily consumption from Data Cloud DLO ─────────────────────────────────
+// Fields: carddefinitiondevelopername__c, utilizationdate__c, unitsconsumed__c
+// utilizationdate__c is a DateTime — cast to DATE for daily grouping
 
 async function fetchDailyConsumption(orgUrl, startDate, endDate) {
   const sql = `
     SELECT
-      DataDate,
-      EntitlementName,
-      SUM(ConsumedQuantity) AS TotalConsumed,
-      SUM(RemainingQuantity) AS TotalRemaining,
-      MAX(TotalQuantity) AS TotalQuantity
+      CAST(utilizationdate__c AS DATE) AS UtilizationDate,
+      carddefinitiondevelopername__c AS CardName,
+      SUM(unitsconsumed__c) AS TotalUnitsConsumed
     FROM TenantDailyEntitlementConsumption
-    WHERE DataDate >= '${startDate}' AND DataDate <= '${endDate}'
-    GROUP BY DataDate, EntitlementName
-    ORDER BY DataDate ASC
+    WHERE utilizationdate__c >= '${startDate}T00:00:00Z'
+      AND utilizationdate__c <= '${endDate}T23:59:59Z'
+    GROUP BY CAST(utilizationdate__c AS DATE), carddefinitiondevelopername__c
+    ORDER BY CAST(utilizationdate__c AS DATE) ASC
   `;
   return dcQuery(orgUrl, sql);
 }
 
-// ── Enriched usage breakdown from Data Cloud DLO ──────────────────────────
+// ── Hourly consumption from Data Cloud DLO ────────────────────────────────
+// Fields: usagehourbucket__c, carddefinitiondevelopername__c, unitsconsumed__c
+// rowdetail__c must equal 'PROCESSED' to exclude partial/reprocessed records
+
+async function fetchHourlyConsumption(orgUrl, startDate, endDate) {
+  const sql = `
+    SELECT
+      usagehourbucket__c AS UsageHour,
+      carddefinitiondevelopername__c AS CardName,
+      SUM(unitsconsumed__c) AS TotalUnitsConsumed
+    FROM TenantHourlyEntitlementConsumption
+    WHERE usagehourbucket__c >= '${startDate}T00:00:00Z'
+      AND usagehourbucket__c <= '${endDate}T23:59:59Z'
+      AND rowdetail__c = 'PROCESSED'
+    GROUP BY usagehourbucket__c, carddefinitiondevelopername__c
+    ORDER BY usagehourbucket__c ASC
+  `;
+  return dcQuery(orgUrl, sql);
+}
+
+// ── Enriched usage breakdown from TenantEnrichedUsageEvent ────────────────
+// Recommended for reporting — no extra cost, no DMO mapping needed.
+// Fields used:
+//   featuredevelopername__c  — the feature/action (e.g. CustomAgentAction)
+//   usagesubtype0__c         — top-level grouping (e.g. Sandbox, Custom Agent Action)
+//   usagesubtype1__c         — sub-grouping (e.g. specific action name)
+//   resourceidorapiname__c   — the specific resource (agent action API name)
+//   carddefinitiondevelopername__c — which card (FlexCredits, etc.)
+//   unitsconsumed__c         — credits consumed (post-multiplier)
+//   usagevalue__c            — raw usage (pre-multiplier)
+//   multiplier__c            — the multiplier applied
+//   eventime__c              — event timestamp
 
 async function fetchBreakdown(orgUrl, startDate, endDate, groupBy) {
-  // groupBy: 'feature' | 'user' | 'type'
-  const groupCol = groupBy === 'user' ? 'UserId'
-    : groupBy === 'type'    ? 'UsageType'
-    : 'FeatureName';
+  let selectCol, groupCol;
+  if (groupBy === 'user') {
+    selectCol = 'usagereportingorgid __c AS GroupValue';
+    groupCol  = 'usagereportingorgid __c';
+  } else if (groupBy === 'type') {
+    selectCol = 'usagetypedevelopername__c AS GroupValue';
+    groupCol  = 'usagetypedevelopername__c';
+  } else {
+    // feature: group by usagesubtype0 + usagesubtype1 to match the hierarchy
+    // in the Digital Wallet drill-down (Environment → Action Type → Specific Action)
+    selectCol = 'usagesubtype0__c AS GroupValue, usagesubtype1__c AS SubGroupValue';
+    groupCol  = 'usagesubtype0__c, usagesubtype1__c';
+  }
 
   const sql = `
     SELECT
-      ${groupCol},
-      SUM(ConsumedQuantity) AS TotalConsumed,
+      ${selectCol},
+      carddefinitiondevelopername__c AS CardName,
+      SUM(unitsconsumed__c) AS TotalUnitsConsumed,
+      SUM(usagevalue__c) AS TotalRawUsage,
+      AVG(multiplier__c) AS AvgMultiplier,
       COUNT(*) AS EventCount
     FROM TenantEnrichedUsageEvent
-    WHERE EventTime >= '${startDate}T00:00:00Z'
-      AND EventTime <= '${endDate}T23:59:59Z'
-    GROUP BY ${groupCol}
-    ORDER BY TotalConsumed DESC
-    LIMIT 50
+    WHERE eventime__c >= '${startDate}T00:00:00Z'
+      AND eventime__c <= '${endDate}T23:59:59Z'
+    GROUP BY ${groupCol}, carddefinitiondevelopername__c
+    ORDER BY TotalUnitsConsumed DESC
+    LIMIT 100
+  `;
+  return dcQuery(orgUrl, sql);
+}
+
+// ── Entitlement data (contract dates, total quantities, card names) ────────
+// TenantEntitlementTransaction: startdate__c, enddate__c, quantity__c,
+// entitlementcarddefdevlname__c, mgmtorgcontract__c, usagemodel__c
+
+async function fetchEntitlements(orgUrl) {
+  const sql = `
+    SELECT
+      entitlementcarddefdevlname__c AS CardDevName,
+      SUM(quantity__c) AS TotalQuantity,
+      MIN(startdate__c) AS StartDate,
+      MAX(enddate__c) AS EndDate,
+      mgmtorgcontract__c AS ContractId,
+      usagemodel__c AS UsageModel
+    FROM TenantEntitlementTransaction
+    WHERE entitlementtransactiontype__c = 'New'
+    GROUP BY entitlementcarddefdevlname__c, mgmtorgcontract__c, usagemodel__c
+    ORDER BY TotalQuantity DESC
   `;
   return dcQuery(orgUrl, sql);
 }

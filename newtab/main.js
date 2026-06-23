@@ -124,6 +124,7 @@ function buildCreditCard(cardKey, usage) {
 }
 
 // ── Daily timeline chart ───────────────────────────────────────────────────
+// Data fields: UtilizationDate (DATE string), CardName, TotalUnitsConsumed
 
 function renderDailyTimeline(data) {
   const el = document.getElementById('tab-timeline-daily');
@@ -137,10 +138,10 @@ function renderDailyTimeline(data) {
     return;
   }
 
-  // Group rows by EntitlementName
+  // Group rows by CardName
   const byCard = {};
   data.data.forEach(row => {
-    const key = row.EntitlementName || 'Unknown';
+    const key = row.CardName || row.carddefinitiondevelopername__c || 'Unknown';
     if (!byCard[key]) byCard[key] = [];
     byCard[key].push(row);
   });
@@ -149,12 +150,13 @@ function renderDailyTimeline(data) {
   const statCards = document.createElement('div');
   statCards.className = 'stat-cards';
   Object.entries(byCard).forEach(([name, rows]) => {
-    const total = rows.reduce((s, r) => s + (parseFloat(r.TotalConsumed) || 0), 0);
+    const total = rows.reduce((s, r) => s + (parseFloat(r.TotalUnitsConsumed) || 0), 0);
+    const displayName = CARD_LABELS[name] ? CARD_LABELS[name].name : name;
     const card = document.createElement('div');
     card.className = 'stat-card';
     const lbl = document.createElement('div');
     lbl.className = 'stat-card-label';
-    lbl.textContent = name;
+    lbl.textContent = displayName;
     const val = document.createElement('div');
     val.className = 'stat-card-value';
     val.textContent = fmt(total);
@@ -166,7 +168,12 @@ function renderDailyTimeline(data) {
 
   // One chart per card
   Object.entries(byCard).forEach(([name, rows]) => {
-    rows.sort((a, b) => (a.DataDate > b.DataDate ? 1 : -1));
+    rows.sort((a, b) => {
+      const da = a.UtilizationDate || a.utilizationdate__c || '';
+      const db = b.UtilizationDate || b.utilizationdate__c || '';
+      return da > db ? 1 : -1;
+    });
+    const displayName = CARD_LABELS[name] ? CARD_LABELS[name].name : name;
     const container = document.createElement('div');
     container.className = 'chart-container';
     const title = document.createElement('div');
@@ -174,10 +181,56 @@ function renderDailyTimeline(data) {
     title.textContent = 'Credits Consumed Per Day';
     const subtitle = document.createElement('div');
     subtitle.className = 'chart-subtitle';
-    subtitle.textContent = name;
+    subtitle.textContent = displayName;
     container.appendChild(title);
     container.appendChild(subtitle);
-    container.appendChild(buildBarChart(rows, 'DataDate', 'TotalConsumed'));
+    const xField = rows[0] && rows[0].UtilizationDate !== undefined ? 'UtilizationDate' : 'utilizationdate__c';
+    container.appendChild(buildBarChart(rows, xField, 'TotalUnitsConsumed'));
+    el.appendChild(container);
+  });
+}
+
+// ── Hourly timeline chart ──────────────────────────────────────────────────
+// Data fields: UsageHour (DateTime), CardName, TotalUnitsConsumed
+
+function renderHourlyTimeline(data) {
+  const el = document.getElementById('tab-timeline-hourly');
+  el.replaceChildren();
+
+  if (!data || !data.data || data.data.length === 0) {
+    const msg = document.createElement('p');
+    msg.style.cssText = 'padding:20px;color:var(--muted);font-size:0.85rem;';
+    msg.textContent = 'No hourly consumption data found for this period.';
+    el.appendChild(msg);
+    return;
+  }
+
+  const byCard = {};
+  data.data.forEach(row => {
+    const key = row.CardName || row.carddefinitiondevelopername__c || 'Unknown';
+    if (!byCard[key]) byCard[key] = [];
+    byCard[key].push(row);
+  });
+
+  Object.entries(byCard).forEach(([name, rows]) => {
+    rows.sort((a, b) => {
+      const da = a.UsageHour || a.usagehourbucket__c || '';
+      const db = b.UsageHour || b.usagehourbucket__c || '';
+      return da > db ? 1 : -1;
+    });
+    const displayName = CARD_LABELS[name] ? CARD_LABELS[name].name : name;
+    const container = document.createElement('div');
+    container.className = 'chart-container';
+    const title = document.createElement('div');
+    title.className = 'chart-title';
+    title.textContent = 'Credits Consumed Per Hour';
+    const subtitle = document.createElement('div');
+    subtitle.className = 'chart-subtitle';
+    subtitle.textContent = displayName;
+    container.appendChild(title);
+    container.appendChild(subtitle);
+    const xField = rows[0] && rows[0].UsageHour !== undefined ? 'UsageHour' : 'usagehourbucket__c';
+    container.appendChild(buildBarChart(rows, xField, 'TotalUnitsConsumed'));
     el.appendChild(container);
   });
 }
@@ -253,13 +306,17 @@ function buildBarChart(rows, xField, yField) {
 }
 
 // ── Breakdown table ────────────────────────────────────────────────────────
+// Feature groupBy: rows have GroupValue (usagesubtype0__c) + SubGroupValue (usagesubtype1__c)
+// Matches the Digital Wallet drill-down hierarchy:
+//   Environment (usagesubtype0__c)
+//     └─ Action Type (usagesubtype1__c)   ← subtotal row
+//   Type groupBy: usagetypedevelopername__c
+//   User groupBy: usagereportingorgid__c
 
 function renderBreakdownTable(data, groupBy) {
   const el = document.getElementById(`tab-breakdown-${groupBy}`);
   if (!el) return;
   el.replaceChildren();
-
-  const colLabel = groupBy === 'user' ? 'User' : groupBy === 'type' ? 'Type' : 'Feature';
 
   if (!data || !data.data || data.data.length === 0) {
     const msg = document.createElement('p');
@@ -270,14 +327,14 @@ function renderBreakdownTable(data, groupBy) {
   }
 
   const rows = data.data;
-  const totalCredits = rows.reduce((s, r) => s + (parseFloat(r.TotalConsumed) || 0), 0);
+  const totalCredits = rows.reduce((s, r) => s + (parseFloat(r.TotalUnitsConsumed) || 0), 0);
 
-  // Summary stat
+  // Summary stat cards
   const statCards = document.createElement('div');
   statCards.className = 'stat-cards';
   [
-    { label: 'Total Consumed', value: fmt(totalCredits) },
-    { label: `Distinct ${colLabel}s`, value: String(rows.length) },
+    { label: 'Credits Consumed', value: fmt(totalCredits) },
+    { label: 'Total Events',     value: fmt(rows.reduce((s, r) => s + (parseInt(r.EventCount) || 0), 0)) },
   ].forEach(({ label, value }) => {
     const card = document.createElement('div');
     card.className = 'stat-card';
@@ -293,51 +350,111 @@ function renderBreakdownTable(data, groupBy) {
   });
   el.appendChild(statCards);
 
-  // Table
   const wrap = document.createElement('div');
   wrap.className = 'breakdown-table-wrap';
   const table = document.createElement('table');
   table.className = 'breakdown-table';
 
-  // Header
   const thead = document.createElement('thead');
   const hrow = document.createElement('tr');
-  [colLabel, 'Units Consumed', 'Event Count', 'Credits Consumed'].forEach((h, i) => {
+  const headers = ['Name', 'Units Consumed', 'Multiplier', 'Credits Consumed'];
+  headers.forEach((h, i) => {
     const th = document.createElement('th');
     if (i > 0) th.className = 'col-right';
     th.textContent = h;
-    th.dataset.col = i;
-    th.addEventListener('click', () => sortTable(table, i, th));
     hrow.appendChild(th);
   });
   thead.appendChild(hrow);
   table.appendChild(thead);
 
-  // Body
   const tbody = document.createElement('tbody');
-  rows.forEach(row => {
-    const groupCol = groupBy === 'user' ? 'UserId'
-      : groupBy === 'type'    ? 'UsageType'
-      : 'FeatureName';
 
-    const tr = document.createElement('tr');
-    const tdName = document.createElement('td');
-    tdName.textContent = row[groupCol] || '—';
-    const tdUnits = document.createElement('td');
-    tdUnits.className = 'col-right num-value';
-    tdUnits.textContent = fmt(row.TotalConsumed);
-    const tdCount = document.createElement('td');
-    tdCount.className = 'col-right num-value';
-    tdCount.textContent = fmt(row.EventCount);
-    const tdCredits = document.createElement('td');
-    tdCredits.className = 'col-right num-value credits-consumed-value';
-    tdCredits.textContent = fmt(row.TotalConsumed);
-    tr.appendChild(tdName);
-    tr.appendChild(tdUnits);
-    tr.appendChild(tdCount);
-    tr.appendChild(tdCredits);
-    tbody.appendChild(tr);
-  });
+  if (groupBy === 'feature') {
+    // Group by usagesubtype0__c (environment level), then usagesubtype1__c (action type level)
+    const byGroup = {};
+    rows.forEach(row => {
+      const g = row.GroupValue || '—';
+      const sub = row.SubGroupValue || '—';
+      if (!byGroup[g]) byGroup[g] = {};
+      if (!byGroup[g][sub]) byGroup[g][sub] = { units: 0, credits: 0, count: 0, multiplier: null };
+      byGroup[g][sub].units   += parseFloat(row.TotalRawUsage)      || 0;
+      byGroup[g][sub].credits += parseFloat(row.TotalUnitsConsumed) || 0;
+      byGroup[g][sub].count   += parseInt(row.EventCount)           || 0;
+      byGroup[g][sub].multiplier = row.AvgMultiplier != null ? parseFloat(row.AvgMultiplier) : null;
+    });
+
+    Object.entries(byGroup).forEach(([groupName, subs]) => {
+      const groupCredits = Object.values(subs).reduce((s, v) => s + v.credits, 0);
+      const groupUnits   = Object.values(subs).reduce((s, v) => s + v.units,   0);
+
+      // Level-1 row: environment (e.g. "Sandbox", "Production")
+      const trGroup = document.createElement('tr');
+      trGroup.className = 'row-group-l1';
+      const tdGName = document.createElement('td');
+      tdGName.textContent = groupName;
+      const tdGUnits = document.createElement('td');
+      tdGUnits.className = 'col-right num-value';
+      tdGUnits.textContent = fmt(groupUnits);
+      const tdGMult = document.createElement('td');
+      tdGMult.className = 'col-right num-value';
+      tdGMult.textContent = '—';
+      const tdGCredits = document.createElement('td');
+      tdGCredits.className = 'col-right num-value credits-consumed-value';
+      tdGCredits.textContent = fmt(groupCredits);
+      trGroup.appendChild(tdGName);
+      trGroup.appendChild(tdGUnits);
+      trGroup.appendChild(tdGMult);
+      trGroup.appendChild(tdGCredits);
+      tbody.appendChild(trGroup);
+
+      // Level-2 rows: action type (e.g. "Custom Agent Action", "Standard Agent Action")
+      Object.entries(subs)
+        .sort((a, b) => b[1].credits - a[1].credits)
+        .forEach(([subName, vals]) => {
+          const tr = document.createElement('tr');
+          tr.className = 'row-group-l2';
+          const tdName = document.createElement('td');
+          tdName.className = 'indent-1';
+          tdName.textContent = subName;
+          const tdUnits = document.createElement('td');
+          tdUnits.className = 'col-right num-value';
+          tdUnits.textContent = fmt(vals.units);
+          const tdMult = document.createElement('td');
+          tdMult.className = 'col-right num-value';
+          tdMult.textContent = vals.multiplier != null ? String(Math.round(vals.multiplier)) : '—';
+          const tdCredits = document.createElement('td');
+          tdCredits.className = 'col-right num-value credits-consumed-value';
+          tdCredits.textContent = fmt(vals.credits);
+          tr.appendChild(tdName);
+          tr.appendChild(tdUnits);
+          tr.appendChild(tdMult);
+          tr.appendChild(tdCredits);
+          tbody.appendChild(tr);
+        });
+    });
+  } else {
+    // Flat table for user/type groupBy
+    rows.forEach(row => {
+      const tr = document.createElement('tr');
+      const tdName = document.createElement('td');
+      tdName.textContent = row.GroupValue || '—';
+      const tdUnits = document.createElement('td');
+      tdUnits.className = 'col-right num-value';
+      tdUnits.textContent = fmt(row.TotalRawUsage);
+      const tdMult = document.createElement('td');
+      tdMult.className = 'col-right num-value';
+      tdMult.textContent = row.AvgMultiplier != null ? String(Math.round(row.AvgMultiplier)) : '—';
+      const tdCredits = document.createElement('td');
+      tdCredits.className = 'col-right num-value credits-consumed-value';
+      tdCredits.textContent = fmt(row.TotalUnitsConsumed);
+      tr.appendChild(tdName);
+      tr.appendChild(tdUnits);
+      tr.appendChild(tdMult);
+      tr.appendChild(tdCredits);
+      tbody.appendChild(tr);
+    });
+  }
+
   table.appendChild(tbody);
   wrap.appendChild(table);
   el.appendChild(wrap);
