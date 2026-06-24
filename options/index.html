@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>SF Credit Monitor — Settings</title>
+  <style>
+    :root {
+      --bg: #1e1e1e; --fg: #d4d4d4; --surface: #252526; --surface2: #2d2d2d;
+      --border: #454545; --accent: #0e7afe; --accent-dark: #005fb8;
+      --muted: #9d9d9d; --red: #f14c4c; --green: #23d18b;
+    }
+    @media (prefers-color-scheme: light) {
+      :root { --bg:#fff; --fg:#1f1f1f; --surface:#f3f3f3; --surface2:#e8e8e8;
+              --border:#c8c8c8; --accent:#0066b8; --accent-dark:#004e8c;
+              --muted:#717171; --red:#cd3131; --green:#1a7a1a; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 32px; background: var(--bg); color: var(--fg);
+           font-family: 'Segoe UI', -apple-system, sans-serif; font-size: 14px;
+           max-width: 640px; }
+    h1 { font-size: 1.1rem; font-weight: 700; margin: 0 0 6px; }
+    .subtitle { font-size: 0.82rem; color: var(--muted); margin-bottom: 28px; }
+    .field { margin-bottom: 16px; }
+    label { display: block; font-size: 0.72rem; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.05em;
+            color: var(--muted); margin-bottom: 5px; }
+    input, textarea, select {
+      width: 100%; padding: 7px 10px; border-radius: 5px;
+      border: 1px solid var(--border); background: var(--surface2);
+      color: var(--fg); font-size: 0.85rem; font-family: inherit;
+    }
+    input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
+    textarea { min-height: 160px; font-family: 'Menlo','Consolas',monospace; font-size: 0.78rem; resize: vertical; }
+    .hint { font-size: 0.72rem; color: var(--muted); margin-top: 4px; }
+    .btn-row { display: flex; gap: 10px; margin-top: 24px; }
+    button { padding: 8px 18px; border-radius: 5px; border: none; cursor: pointer;
+             font-size: 0.85rem; font-weight: 600; font-family: inherit; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--accent-dark); }
+    .btn-secondary { background: var(--surface2); color: var(--fg); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--border); }
+    #status { margin-top: 16px; padding: 10px 14px; border-radius: 6px;
+              font-size: 0.83rem; display: none; }
+    #status.ok  { background: color-mix(in srgb, var(--green) 12%, transparent); color: var(--green); }
+    #status.err { background: color-mix(in srgb, var(--red) 12%, transparent); color: var(--red); }
+    .section-title { font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+                     letter-spacing: 0.05em; color: var(--muted); margin: 24px 0 12px;
+                     padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  </style>
+</head>
+<body>
+  <h1>SF Credit Monitor — Settings</h1>
+  <p class="subtitle">Configure the JWT credentials for Data Cloud API access. These are stored locally in your browser and never sent anywhere except Salesforce.</p>
+
+  <div class="section-title">Salesforce Org</div>
+
+  <div class="field">
+    <label>Login URL</label>
+    <select id="loginUrl">
+      <option value="https://login.salesforce.com">Production — login.salesforce.com</option>
+      <option value="https://test.salesforce.com">Sandbox — test.salesforce.com</option>
+    </select>
+  </div>
+
+  <div class="section-title">External Client App (Connected App)</div>
+
+  <div class="field">
+    <label>Consumer Key</label>
+    <input type="text" id="consumerKey" placeholder="3MVG9pRzvMkjMb6l…" autocomplete="off" spellcheck="false" />
+    <p class="hint">From Setup → External Client App Manager → your app → OAuth Settings → Consumer Key</p>
+  </div>
+
+  <div class="field">
+    <label>Salesforce Username</label>
+    <input type="text" id="username" placeholder="integration@yourcompany.com" autocomplete="off" spellcheck="false" />
+    <p class="hint">The Data Cloud integration user's username. Must be pre-authorised in the app's OAuth Policies.</p>
+  </div>
+
+  <div class="section-title">Private Key</div>
+
+  <div class="field">
+    <label>Private Key (PEM)</label>
+    <textarea id="privateKey" placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;MIIEpAIBAAKCAQEA...&#10;-----END RSA PRIVATE KEY-----"></textarea>
+    <p class="hint">Contents of <code>Data360_privatekey.pem</code> — the private key matching the certificate uploaded to your External Client App.</p>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn-primary" id="btn-save">Save</button>
+    <button class="btn-secondary" id="btn-test">Test connection</button>
+  </div>
+
+  <div id="status"></div>
+
+  <script src="options.js"></script>
+</body>
+</html>

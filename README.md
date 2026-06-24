@@ -1,7 +1,7 @@
 # SF Credit Monitor — Chrome Extension
 
-> **⚠ Under construction — not functional yet.**
-> Authentication against the Data Cloud Query API is blocked on SSO orgs. The current approach (session cookie → token exchange) does not work when the org uses SAML SSO. A connected app with OAuth 2.0 PKCE is the correct solution and is the planned next step.
+> **⚠ Under construction — requires setup before first use.**
+> A one-time admin setup is required: create an External Client App in your Salesforce org with JWT Bearer Flow enabled. See [Setup](#setup) below.
 
 A Chrome extension for monitoring Salesforce Agentforce and Data Cloud consumption credits directly from your production org — overview cards, daily timeline, and drill-down by feature, user, and operation type.
 
@@ -17,36 +17,60 @@ A Chrome extension for monitoring Salesforce Agentforce and Data Cloud consumpti
 
 ---
 
+## Setup
+
+One-time admin setup required before the extension will work.
+
+### Step 1 — Generate a key pair
+
+```bash
+# Generate private key and self-signed certificate
+openssl req -x509 -newkey rsa:2048 -keyout Data360_privatekey.pem -out Data360_publickey.cer \
+  -days 3650 -nodes -subj "/CN=SF Credit Monitor"
+```
+
+### Step 2 — Create an External Client App in Salesforce
+
+1. Setup → **External Client App Manager** → New External Client App
+2. Settings tab → Edit → Enable OAuth → Callback URL: `http://localhost`
+3. Enable **JWT Bearer Flow** → upload `Data360_publickey.cer`
+4. Add OAuth scopes: `api`, `cdp_query_api`, `cdp_ingest_api`, `cdp_profile_api`, `refresh_token`
+5. Save → Policies tab → Permitted Users: **Admin approved users are pre-authorized**
+6. Assign the Data Cloud integration user's profile or permission set
+7. Note the **Consumer Key** from the OAuth Settings tab
+
+### Step 3 — Configure the extension
+
+Right-click the extension icon → **Options**, then enter:
+- **Login URL**: Production or Sandbox
+- **Consumer Key**: from Step 2
+- **Username**: the Data Cloud integration user's username
+- **Private Key**: contents of `Data360_privatekey.pem`
+
+Click **Test connection** to verify.
+
+---
+
 ## How authentication works
 
-The extension uses a two-step authentication flow — no connected app, no OAuth client ID, no external server required.
+The extension uses the **OAuth 2.0 JWT Bearer Flow** — the standard server-to-server auth pattern for Data Cloud. It bypasses SSO entirely and requires no user login prompt.
 
-**Step 1 — Salesforce session cookie**
-The extension reads the `sid` session cookie that Chrome already holds when you are logged into a Salesforce org. This is the same approach used by [Salesforce Inspector Reloaded](https://github.com/tprouvot/Salesforce-Inspector-reloaded) and is the correct pattern for a browser extension operating inside an existing session.
+**Step 1 — JWT → Salesforce access token**
+The extension signs a short-lived JWT with your private key and posts it to `/services/oauth2/token`. Salesforce validates the JWT against the certificate in your External Client App and returns an access token.
 
-**Step 2 — Data Cloud token exchange**
-To query the Data Cloud APIs (`TenantDailyEntitlementConsumption`, `TenantEnrichedUsageEvent`), the extension exchanges the Salesforce session token for a Data Cloud access token using the documented OAuth token exchange endpoint:
+**Step 2 — Salesforce token → Data Cloud token**
+The access token is exchanged via `/services/a360/token` for a Data Cloud tenant-specific token and TSE endpoint. All Data Cloud queries use this token against `{TSE}/api/v2/query`.
 
-```
-POST {orgUrl}/services/a360/token
-grant_type=urn:salesforce:grant-type:external:cdp
-subject_token={sid}
-subject_token_type=urn:ietf:params:oauth:token-type:access_token
-```
-
-The response returns an `access_token` and an `instance_url` (the tenant-specific Data Cloud endpoint). This token is cached in the service worker's memory for its lifetime and is never written to disk.
-
-All API calls go directly from your browser to your org — no third-party servers are involved.
+Both tokens are cached in the service worker's memory only — nothing is written to disk. All calls go directly from your browser to Salesforce — no third-party servers.
 
 **Manifest permissions explained:**
 
 | Permission | Why it is needed |
 |---|---|
-| `cookies` | Read the `sid` session cookie to authenticate API calls |
 | `tabs` | Detect which Salesforce org the active tab is pointed at |
-| `storage` | Remember the org URL between tab opens (session storage only) |
+| `storage` | Store credentials (local) and org URL (session) |
 | `activeTab` | Trigger org detection when you click the toolbar icon |
-| `host_permissions` (`*.salesforce.com`, `*.360a.salesforce.com`) | Allow the service worker to make fetch requests to your org and Data Cloud APIs |
+| `host_permissions` (`*.salesforce.com`, `*.360a.salesforce.com`) | Allow the service worker to call Salesforce and Data Cloud APIs |
 
 ---
 

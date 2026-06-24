@@ -12,6 +12,8 @@
     "activeTab"
   ],
 
+  "options_page": "options/index.html",
+
   "host_permissions": [
     "https://*.salesforce.com/*",
     "https://*.force.com/*",

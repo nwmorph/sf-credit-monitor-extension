@@ -169,6 +169,10 @@ async function doRefresh() {
     const r = await sendMsg({ type: 'fetchOverview', orgUrl });
 
     if (!r.ok) {
+      if (r.error && r.error.startsWith('NOT_CONFIGURED')) {
+        showError(r.error.replace('NOT_CONFIGURED: ', '') + '\n\nRight-click the extension icon → Options to configure.');
+        return;
+      }
       const msg = r.error === 'ACCESS_DENIED'
         ? 'Access denied. Check that your user has permission to access Data Cloud APIs.'
         : `Error: ${r.error}`;
