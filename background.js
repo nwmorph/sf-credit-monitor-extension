@@ -119,12 +119,14 @@ async function getDataCloudToken(orgUrl) {
 
   console.debug('[SF Credit Monitor] token exchange →', apiUrl, '| sid prefix:', accessToken.slice(0, 20) + '…');
 
+  // Use credentials:'include' so the browser sends all SSO session cookies
+  // automatically — same as how the Digital Wallet page authenticates.
+  // Do NOT pass Authorization header here: for SSO orgs, an explicit Bearer
+  // triggers SAML validation which redirects to the IdP.
   const res = await fetch(`${apiUrl}/services/a360/token`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Authorization': `Bearer ${accessToken}`
-    },
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       grant_type: 'urn:salesforce:grant-type:external:cdp',
       subject_token: accessToken,
