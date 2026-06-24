@@ -1,7 +1,20 @@
 # SF Credit Monitor — Chrome Extension
 
 > **⚠ Work in progress — not yet verified as working end-to-end.**
-> The auth approach has been rewritten to use the correct OAuth 2.0 JWT Bearer Flow but has not yet been tested against a live org. The setup steps below are correct in theory but the full flow (JWT signing → token exchange → Data Cloud queries) has not been validated. Use at your own risk and expect rough edges.
+
+## Current status
+
+| Area | Status |
+|---|---|
+| UI scaffold (overview cards, timeline, breakdown table) | ✅ Complete |
+| DLO field names (from official spec) | ✅ Correct |
+| Auth approach (OAuth 2.0 JWT Bearer Flow) | ✅ Implemented, **not yet tested** |
+| External Client App setup in production org | ❌ Not done |
+| End-to-end test (token exchange → Data Cloud query → data renders) | ❌ Not done |
+
+**To unblock:** Complete the [Setup](#setup) steps below — specifically creating the External Client App and generating the key pair — then use the Options page "Test connection" button to verify auth works. Once that passes, the full flow should work.
+
+---
 
 A Chrome extension for monitoring Salesforce Agentforce and Data Cloud consumption credits directly from your production org — overview cards, daily timeline, and drill-down by feature, user, and operation type.
 
