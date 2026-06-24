@@ -79,6 +79,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 });
 
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+// Find an open Salesforce tab for the given orgUrl, for content script proxying.
+async function findSalesforceTab(orgUrl) {
+  const tabs = await chrome.tabs.query({});
+  const origin = new URL(orgUrl).origin;
+  return tabs.find(t => t.url && t.url.startsWith(origin)) ||
+         tabs.find(t => t.url && /salesforce\.com|force\.com/.test(new URL(t.url).hostname));
+}
+
 // ── Auth helpers ───────────────────────────────────────────────────────────
 
 function toApiUrl(orgUrl) {
@@ -119,35 +129,43 @@ async function getDataCloudToken(orgUrl) {
 
   console.debug('[SF Credit Monitor] token exchange →', apiUrl, '| sid prefix:', accessToken.slice(0, 20) + '…');
 
-  // Use credentials:'include' so the browser sends all SSO session cookies
-  // automatically — same as how the Digital Wallet page authenticates.
-  // Do NOT pass Authorization header here: for SSO orgs, an explicit Bearer
-  // triggers SAML validation which redirects to the IdP.
-  const res = await fetch(`${apiUrl}/services/a360/token`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'urn:salesforce:grant-type:external:cdp',
-      subject_token: accessToken,
-      subject_token_type: 'urn:ietf:params:oauth:token-type:access_token'
-    })
+  // The /services/a360/token endpoint on SSO orgs requires the full browser
+  // session context (SSO cookies). Service worker fetch runs in a separate
+  // context and cannot carry them. Solution: proxy through the content script
+  // which runs inside the Salesforce tab and has the full session.
+  const sfTab = await findSalesforceTab(orgUrl);
+  if (!sfTab) throw new Error('No Salesforce tab found for this org. Please keep a Salesforce tab open and try again.');
+
+  const proxyResult = await new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(sfTab.id, {
+      type: 'credentialedFetch',
+      url: `${apiUrl}/services/a360/token`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'urn:salesforce:grant-type:external:cdp',
+        subject_token: accessToken,
+        subject_token_type: 'urn:ietf:params:oauth:token-type:access_token'
+      }).toString()
+    }, resp => {
+      if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+      else resolve(resp);
+    });
   });
 
-  // Always read body as text first — avoids JSON parse crash on HTML error pages
-  const rawBody = await res.text();
-  console.debug('[SF Credit Monitor] token exchange response:', res.status, rawBody.slice(0, 300));
+  const rawBody = proxyResult.body || '';
+  console.debug('[SF Credit Monitor] token exchange response:', proxyResult.status, rawBody.slice(0, 300));
 
-  if (!res.ok) {
-    if (res.status === 401 || res.status === 403) throw new Error('ACCESS_DENIED');
-    throw new Error(`Data Cloud token exchange failed (${res.status}): ${rawBody.slice(0, 300)}`);
+  if (!proxyResult.ok) {
+    if (proxyResult.status === 401 || proxyResult.status === 403) throw new Error('ACCESS_DENIED');
+    throw new Error(`Data Cloud token exchange failed (${proxyResult.status}): ${rawBody.slice(0, 300)}`);
   }
 
   let json;
   try {
     json = JSON.parse(rawBody);
   } catch (_) {
-    throw new Error(`Token exchange returned non-JSON (${res.status}): ${rawBody.slice(0, 200)}`);
+    throw new Error(`Token exchange returned non-JSON (${proxyResult.status}): ${rawBody.slice(0, 200)}`);
   }
 
   if (!json.access_token || !json.instance_url) {
