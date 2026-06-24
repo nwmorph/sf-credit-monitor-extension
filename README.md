@@ -1,7 +1,7 @@
 # SF Credit Monitor — Chrome Extension
 
-> **⚠ Under construction — requires setup before first use.**
-> A one-time admin setup is required: create an External Client App in your Salesforce org with JWT Bearer Flow enabled. See [Setup](#setup) below.
+> **⚠ Work in progress — not yet verified as working end-to-end.**
+> The auth approach has been rewritten to use the correct OAuth 2.0 JWT Bearer Flow but has not yet been tested against a live org. The setup steps below are correct in theory but the full flow (JWT signing → token exchange → Data Cloud queries) has not been validated. Use at your own risk and expect rough edges.
 
 A Chrome extension for monitoring Salesforce Agentforce and Data Cloud consumption credits directly from your production org — overview cards, daily timeline, and drill-down by feature, user, and operation type.
 
