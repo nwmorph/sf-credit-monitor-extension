@@ -1,5 +1,8 @@
 # SF Credit Monitor — Chrome Extension
 
+> **⚠ Under construction — not functional yet.**
+> Authentication against the Data Cloud Query API is blocked on SSO orgs. The current approach (session cookie → token exchange) does not work when the org uses SAML SSO. A connected app with OAuth 2.0 PKCE is the correct solution and is the planned next step.
+
 A Chrome extension for monitoring Salesforce Agentforce and Data Cloud consumption credits directly from your production org — overview cards, daily timeline, and drill-down by feature, user, and operation type.
 
 ---
